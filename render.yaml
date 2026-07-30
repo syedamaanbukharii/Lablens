@@ -1,0 +1,22 @@
+services:
+  - type: web
+    name: lablens-api
+    env: python
+    buildCommand: pip install -e .
+    startCommand: uvicorn lablens.api.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: LABLENS_ENV
+        value: production
+      - key: LABLENS_DATABASE_URL
+        fromDatabase:
+          name: lablens-db
+          property: connectionString
+      - key: LABLENS_CORS_ORIGINS
+        value: "*"
+      - key: LABLENS_SECRET_KEY
+        generateValue: true
+
+databases:
+  - name: lablens-db
+    databaseName: lablens
+    user: lablens

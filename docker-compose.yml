@@ -1,0 +1,13 @@
+services:
+  api:
+    build: { context: ./backend }
+    ports: ["8000:8000"]
+    environment:
+      LABLENS_DATABASE_URL: sqlite+aiosqlite:///./lablens.db
+      LABLENS_CORS_ORIGINS: "http://localhost:5173,http://localhost:3000"
+    volumes: ["api_data:/app"]
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/api/health"]
+      interval: 30s
+volumes:
+  api_data:
