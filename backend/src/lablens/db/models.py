@@ -46,7 +46,7 @@ class User(Base):
     full_name = Column(String(255), default="")
     date_of_birth = Column(String(10), default="")  # stored as string, never a raw date
     is_active = Column(Boolean, default=True)
-    created_at = Column(DateTime, default=_now)
+    created_at = Column(DateTime(timezone=True), default=_now)
 
     reports = relationship("LabReport", back_populates="user", cascade="all, delete-orphan")
 
@@ -57,12 +57,12 @@ class LabReport(Base):
     id = Column(String(16), primary_key=True, default=_uid)
     user_id = Column(String(16), ForeignKey("users.id"), nullable=False, index=True)
     filename = Column(String(255), default="")
-    report_date = Column(DateTime, nullable=True, index=True)
+    report_date = Column(DateTime(timezone=True), nullable=True, index=True)
     lab_name = Column(String(255), default="")
     raw_text = Column(Text, default="")
     summary = Column(Text, default="")
     status = Column(String(20), default="pending")  # pending | processed | error
-    created_at = Column(DateTime, default=_now)
+    created_at = Column(DateTime(timezone=True), default=_now)
 
     user = relationship("User", back_populates="reports")
     biomarkers = relationship("Biomarker", back_populates="report", cascade="all, delete-orphan")
@@ -86,7 +86,7 @@ class Biomarker(Base):
     status = Column(String(20), default="normal")  # normal | low | high | critical_low | critical_high
     category = Column(String(50), default="general")  # blood_sugar, lipid, liver, kidney, cbc, thyroid, etc.
     interpretation = Column(Text, default="")
-    report_date = Column(DateTime, nullable=True)
+    report_date = Column(DateTime(timezone=True), nullable=True)
 
     report = relationship("LabReport", back_populates="biomarkers")
 
