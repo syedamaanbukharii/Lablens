@@ -173,6 +173,8 @@ async def get_report(
         "report_date": report.report_date.isoformat() if report.report_date else None,
         "status": report.status,
         "summary": report.summary,
+        "diet_suggestions": report.diet_suggestions,
+        "doctor_recommendation": report.doctor_recommendation,
         "markers": [
             {
                 "name": m.name,

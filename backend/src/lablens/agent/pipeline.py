@@ -25,6 +25,8 @@ from lablens.extraction.parser import ParsedBiomarker, classify_status, parse_bi
 from lablens.extraction.pdf import extract_text
 
 
+from lablens.agent.llm import extract_from_llm
+
 async def process_lab_report(
     db: AsyncSession,
     user_id: str,
@@ -48,22 +50,48 @@ async def process_lab_report(
     db.add(report)
     await db.flush()
 
-    # Step 3: Parse biomarkers (rules-based, deterministic)
-    parsed = parse_biomarkers(extraction.text)
+    # Step 3: Parse biomarkers using LLM
+    try:
+        llm_data = extract_from_llm(extraction.text)
+    except Exception as e:
+        report.status = "error"
+        report.summary = f"Error communicating with LLM: {str(e)}"
+        await db.commit()
+        raise
 
-    if not parsed:
-        report.status = "no_markers_found"
-        report.summary = "No recognizable lab values were found in this report. Please ensure the upload is a lab test result."
+    if not llm_data.is_valid_report:
+        report.status = "invalid_report"
+        report.summary = llm_data.error_message
         await db.commit()
         return {
             "report_id": report.id,
-            "status": "no_markers_found",
+            "status": "invalid_report",
             "extraction_method": extraction.method,
             "raw_text_preview": extraction.text[:500],
             "summary": report.summary,
             "markers": [],
             "trends": [],
+            "diet_suggestions": "",
+            "doctor_recommendation": ""
         }
+
+    # Convert LLMBiomarker to ParsedBiomarker for compatibility with interpreter
+    parsed = [
+        ParsedBiomarker(
+            name=bm.name,
+            display_name=bm.display_name,
+            value=bm.value,
+            unit=bm.unit,
+            ref_low=bm.ref_low,
+            ref_high=bm.ref_high,
+            category=bm.category
+        )
+        for bm in llm_data.biomarkers
+    ]
+
+    # Save extra LLM fields
+    report.diet_suggestions = llm_data.diet_suggestions
+    report.doctor_recommendation = llm_data.doctor_recommendation
 
     # Step 4: Interpret (rules-based plain-language)
     summary = summarize_report(parsed)
@@ -126,6 +154,8 @@ async def process_lab_report(
             for cat, items in summary.categories.items()
         },
         "trends": trends,
+        "diet_suggestions": report.diet_suggestions,
+        "doctor_recommendation": report.doctor_recommendation,
     }
 
 

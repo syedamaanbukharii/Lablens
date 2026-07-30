@@ -61,6 +61,8 @@ class LabReport(Base):
     lab_name = Column(String(255), default="")
     raw_text = Column(Text, default="")
     summary = Column(Text, default="")
+    diet_suggestions = Column(Text, default="")
+    doctor_recommendation = Column(Text, default="")
     status = Column(String(20), default="pending")  # pending | processed | error
     created_at = Column(DateTime(timezone=True), default=_now)
 

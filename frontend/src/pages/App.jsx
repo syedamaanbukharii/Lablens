@@ -238,29 +238,59 @@ function MainApp({ user, onLogout }) {
         {/* Result */}
         {page === "result" && result && (
           <>
-            <div style={{ ...card, background: result.critical_count > 0 ? T.red50 : result.abnormal_count > 0 ? T.amber50 : T.green50, border: "none" }}>
-              <p style={{ fontSize: 14, fontWeight: 700, color: T.slate800, margin: "0 0 8px" }}>Summary</p>
-              <p style={{ fontSize: 14, lineHeight: 1.7, color: T.slate700, margin: 0, whiteSpace: "pre-line" }}>{result.summary}</p>
-            </div>
-
-            <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
-              {[["✅", result.normal_count, "Normal", T.green100], ["⚠️", result.abnormal_count, "Watch", T.amber100], ["🔴", result.critical_count, "Action", T.red100]].map(([emoji, count, label, bg]) => (
-                <div key={label} style={{ flex: 1, background: bg, borderRadius: T.radiusSm, padding: "12px 8px", textAlign: "center" }}>
-                  <div style={{ fontSize: 20 }}>{emoji}</div>
-                  <div style={{ fontSize: 22, fontWeight: 800, color: T.slate800 }}>{count}</div>
-                  <div style={{ fontSize: 11, color: T.slate500 }}>{label}</div>
-                </div>
-              ))}
-            </div>
-
-            {Object.entries(result.categories || {}).map(([cat, markers]) => (
-              <div key={cat}>
-                <h3 style={{ fontSize: 14, fontWeight: 700, color: T.slate700, margin: "16px 0 8px" }}>
-                  {CATEGORY_LABELS[cat] || cat}
-                </h3>
-                {markers.map((m, i) => <MarkerCard key={i} m={m} />)}
+            {result.status === "invalid_report" ? (
+              <div style={{ ...card, background: T.red50, border: `1px solid ${T.red500}`, textAlign: "center" }}>
+                <p style={{ fontSize: 32, margin: "0 0 12px" }}>⚠️</p>
+                <p style={{ fontSize: 16, fontWeight: 700, color: T.red600, margin: "0 0 8px" }}>Invalid Document</p>
+                <p style={{ fontSize: 14, color: T.slate700, margin: 0 }}>{result.summary}</p>
               </div>
-            ))}
+            ) : (
+              <>
+                <div style={{ ...card, background: result.critical_count > 0 ? T.red50 : result.abnormal_count > 0 ? T.amber50 : T.green50, border: "none" }}>
+                  <p style={{ fontSize: 14, fontWeight: 700, color: T.slate800, margin: "0 0 8px" }}>Summary</p>
+                  <p style={{ fontSize: 14, lineHeight: 1.7, color: T.slate700, margin: 0, whiteSpace: "pre-line" }}>{result.summary}</p>
+                </div>
+
+                <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+                  {[["✅", result.normal_count, "Normal", T.green100], ["⚠️", result.abnormal_count, "Watch", T.amber100], ["🔴", result.critical_count, "Action", T.red100]].map(([emoji, count, label, bg]) => (
+                    <div key={label} style={{ flex: 1, background: bg, borderRadius: T.radiusSm, padding: "12px 8px", textAlign: "center" }}>
+                      <div style={{ fontSize: 20 }}>{emoji}</div>
+                      <div style={{ fontSize: 22, fontWeight: 800, color: T.slate800 }}>{count}</div>
+                      <div style={{ fontSize: 11, color: T.slate500 }}>{label}</div>
+                    </div>
+                  ))}
+                </div>
+                
+                {result.diet_suggestions && (
+                  <div style={{ ...card, background: T.teal50, borderLeft: `4px solid ${T.teal500}` }}>
+                    <p style={{ fontSize: 14, fontWeight: 700, color: T.teal800, margin: "0 0 8px" }}>🥗 Dietary Suggestions</p>
+                    <p style={{ fontSize: 13, lineHeight: 1.6, color: T.slate700, margin: 0 }}>{result.diet_suggestions}</p>
+                  </div>
+                )}
+                
+                {result.doctor_recommendation && (
+                  <div style={{ ...card, background: T.amber50, borderLeft: `4px solid ${T.amber500}` }}>
+                    <p style={{ fontSize: 14, fontWeight: 700, color: T.amber600, margin: "0 0 8px" }}>🩺 Doctor Recommendation</p>
+                    <p style={{ fontSize: 13, lineHeight: 1.6, color: T.slate700, margin: 0 }}>{result.doctor_recommendation}</p>
+                  </div>
+                )}
+                
+                <div style={{ padding: "12px", background: T.slate100, borderRadius: T.radiusSm, marginBottom: 16, border: `1px dashed ${T.slate300}` }}>
+                   <p style={{ fontSize: 11, color: T.slate500, margin: 0, textAlign: "center" }}>
+                     <b>Disclaimer:</b> We do not diagnose medical conditions. This app provides insights and suggestions based on AI analysis of your lab report. Always consult a qualified healthcare professional.
+                   </p>
+                </div>
+
+                {Object.entries(result.categories || {}).map(([cat, markers]) => (
+                  <div key={cat}>
+                    <h3 style={{ fontSize: 14, fontWeight: 700, color: T.slate700, margin: "16px 0 8px" }}>
+                      {CATEGORY_LABELS[cat] || cat}
+                    </h3>
+                    {markers.map((m, i) => <MarkerCard key={i} m={m} />)}
+                  </div>
+                ))}
+              </>
+            )}
           </>
         )}
 

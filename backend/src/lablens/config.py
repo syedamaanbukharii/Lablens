@@ -12,9 +12,11 @@ class Settings(BaseSettings):
     env: Literal["development", "staging", "production"] = "development"
     secret_key: str = "dev-secret-change-in-production"
     database_url: str = "sqlite+aiosqlite:///./lablens.db"
-    llm_provider: Literal["mock", "anthropic"] = "mock"
+    llm_provider: Literal["mock", "anthropic", "groq"] = "groq"
     anthropic_api_key: str | None = None
     anthropic_model: str = "claude-haiku-4-5-20251001"
+    groq_api_key: str | None = None
+    groq_model: str = "llama3-8b-8192"
     upload_dir: str = "./uploads"
     cors_origins: str = "*"
     access_token_expire_minutes: int = 1440  # 24h
