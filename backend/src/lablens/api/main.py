@@ -19,6 +19,8 @@ from lablens.agent.pipeline import process_lab_report
 from lablens.auth.service import AuthService, get_current_user
 from lablens.config import get_settings
 from lablens.db.models import Biomarker, LabReport, User, get_db, init_db
+from fastapi.responses import JSONResponse
+import traceback
 
 
 @asynccontextmanager
@@ -30,6 +32,10 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="LabLens", version=__version__, description="AI lab report summarizer", lifespan=lifespan)
 settings = get_settings()
 app.add_middleware(CORSMiddleware, allow_origins=settings.cors_list, allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request, exc):
+    return JSONResponse(status_code=500, content={"message": str(exc), "traceback": traceback.format_exc()})
 
 
 # ---------- Schemas ----------
