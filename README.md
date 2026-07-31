@@ -2,16 +2,16 @@
 
 **AI-powered lab report summarizer with plain-language insights and historical biomarker trends.**
 
-LabLens bridges the gap between complex clinical data and patient understanding. It extracts data from raw lab report PDFs, analyzes the biomarkers against standard reference ranges, and translates the findings into actionable, doctor-like plain-language summaries. It also tracks historical data to surface longitudinal health trends.
+LabLens bridges the gap between complex clinical data and patient understanding. It extracts data from raw lab report PDFs (including scanned images via OCR), analyzes the biomarkers using advanced LLMs, and translates the findings into actionable, doctor-like plain-language summaries. It also tracks historical data to surface longitudinal health trends.
 
 ---
 
 ## ✨ Features
 
-- **📄 Automated Extraction**: Upload PDF lab reports and automatically extract raw text and metrics.
-- **🧬 Biomarker Parsing**: Deterministically parses individual biomarkers, values, units, and reference ranges.
-- **🩺 Clinical Interpretation**: Analyzes current values against historical data to determine if a patient's health is improving, worsening, or stable—accounting for whether a "lower" or "higher" value is clinically beneficial.
-- **📈 Longitudinal Trends**: Visualizes historical biomarker trajectories with interactive charts.
+- **📄 Automated Extraction & OCR**: Upload PDF lab reports or images. Native text is extracted instantly, while scanned images are processed using Tesseract OCR.
+- **🧬 Intelligent Biomarker Parsing**: Powered by Groq's blazing-fast LLaMA models, LabLens intelligently extracts individual biomarkers, values, units, and reference ranges from unstructured medical text.
+- **🩺 Clinical Interpretation**: Provides easy-to-understand summaries, flags abnormal ranges, and offers general diet suggestions and medical specialist recommendations based on the findings.
+- **📈 Longitudinal Trends**: Visualizes historical biomarker trajectories with interactive charts to see if a condition is improving, worsening, or stable.
 - **🔐 Secure Authentication**: JWT-based authentication with bcrypt password hashing to ensure patient data remains private.
 
 ---
@@ -22,8 +22,9 @@ LabLens is structured as a decoupled monorepo:
 
 ### Backend (`/backend`)
 - **Framework**: FastAPI (Python 3.11+)
-- **Database**: SQLite (local) / PostgreSQL (production) via SQLAlchemy & asyncpg/aiosqlite
-- **AI/Extraction**: PyMuPDF for document parsing
+- **Database**: PostgreSQL (production) via SQLAlchemy & asyncpg
+- **AI/LLM Engine**: Groq API (`llama-3.1-8b-instant`)
+- **Document Parsing**: PyMuPDF (`fitz`) and `pytesseract` (Tesseract OCR)
 - **Security**: Passlib (bcrypt), python-jose (JWT)
 
 ### Frontend (`/frontend`)
@@ -35,20 +36,24 @@ LabLens is structured as a decoupled monorepo:
 
 ## 🚀 Production Deployment
 
-This repository is pre-configured for automated Infrastructure-as-Code (IaC) deployment to **Render** and **Vercel**.
-
 ### 1. Backend (Render)
-The backend service and PostgreSQL database can be deployed instantly using the provided `render.yaml` Blueprint.
-1. Connect this repository to your Render account.
-2. Render will automatically spin up the `lablens-db` (PostgreSQL) and `lablens-api` (Python web service).
-3. The API will be available at your Render URL.
+To support Optical Character Recognition (OCR) for scanned PDFs and images, the backend must be deployed using **Docker** so that system-level dependencies (Tesseract) can be installed.
+
+1. Create a **New Web Service** on Render and connect this repository.
+2. For the **Runtime**, select **Docker** (do *not* use Native Python).
+3. Set the following Environment Variables:
+   - `DATABASE_URL`: (Render will provide this if you attach a PostgreSQL database)
+   - `LABLENS_GROQ_API_KEY`: Your Groq API key
+   - `LABLENS_SECRET_KEY`: A secure random string for JWT signing
+4. Render will build the image from the included `Dockerfile` and start the API.
 
 ### 2. Frontend (Vercel)
 The React frontend is optimized for Vercel.
+
 1. Import the `/frontend` directory as the root of a new Vercel project.
-2. The `vercel.json` file handles React Router redirects.
+2. The `vercel.json` file handles React Router redirects automatically.
 3. Add the following Environment Variable in Vercel:
-   - `VITE_API_URL`: Your live Render API URL (e.g., `https://lablens-api-xyz.onrender.com`).
+   - `VITE_API_URL`: Your live Render API URL (e.g., `https://lablens-api.onrender.com`).
 
 ---
 
@@ -57,6 +62,10 @@ The React frontend is optimized for Vercel.
 ### Prerequisites
 - Python 3.11+
 - Node.js 18+
+- Tesseract OCR (must be installed on your system for scanned PDF support)
+  - Ubuntu: `sudo apt-get install tesseract-ocr`
+  - macOS: `brew install tesseract`
+  - Windows: [Download installer](https://github.com/UB-Mannheim/tesseract/wiki)
 
 ### Setup
 
@@ -73,7 +82,11 @@ The React frontend is optimized for Vercel.
    source venv/bin/activate  # On Windows: venv\Scripts\activate
    pip install -e .[dev]
    ```
-   Create a `.env` file in the `backend` directory (refer to `.env.example`).
+   Create a `.env` file in the `backend` directory:
+   ```env
+   LABLENS_GROQ_API_KEY=your_groq_api_key_here
+   LABLENS_SECRET_KEY=dev-secret
+   ```
    Run the development server:
    ```bash
    uvicorn lablens.api.main:app --reload
