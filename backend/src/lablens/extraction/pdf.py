@@ -9,6 +9,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 
+import io
+import logging
+
+log = logging.getLogger(__name__)
+
 @dataclass
 class ExtractionResult:
     text: str
@@ -18,53 +23,85 @@ class ExtractionResult:
 
 
 def extract_text_from_pdf(pdf_bytes: bytes) -> ExtractionResult:
-    """Extract text from a PDF using PyMuPDF."""
+    """Extract text from a PDF, falling back to OCR for scanned pages."""
     import fitz  # PyMuPDF
-
+    
     doc = fitz.open(stream=pdf_bytes, filetype="pdf")
-    pages = []
+    pages_text = []
+    has_text = False
+    
+    # Pass 1: Try native text extraction
     for page in doc:
-        text = page.get_text("text")
-        if text.strip():
-            pages.append(text.strip())
-
-    doc.close()
-
-    if pages:
+        text = page.get_text("text").strip()
+        if len(text) > 50:  # If we have substantial text, it's not purely a scan
+            has_text = True
+            pages_text.append(text)
+    
+    if has_text:
+        doc.close()
         return ExtractionResult(
-            text="\n\n".join(pages),
-            pages=len(pages),
+            text="\n\n".join(pages_text),
+            pages=len(pages_text),
             method="pymupdf-text",
             confidence=0.95,
         )
-
-    # Fallback: if no text found (scanned PDF), try OCR via PyMuPDF's built-in
-    doc = fitz.open(stream=pdf_bytes, filetype="pdf")
-    ocr_pages = []
-    for page in doc:
-        # Render page to image and extract via blocks
-        blocks = page.get_text("blocks")
-        block_text = " ".join(b[4] for b in blocks if b[6] == 0)  # type 0 = text
-        if block_text.strip():
-            ocr_pages.append(block_text.strip())
-
+        
+    # Pass 2: Scanned PDF OCR fallback
+    ocr_text = []
+    try:
+        import pytesseract
+        from PIL import Image
+        
+        for page in doc:
+            pix = page.get_pixmap(dpi=200)
+            img = Image.open(io.BytesIO(pix.tobytes()))
+            text = pytesseract.image_to_string(img)
+            if text.strip():
+                ocr_text.append(text.strip())
+                
+        doc.close()
+        if ocr_text:
+            return ExtractionResult(
+                text="\n\n".join(ocr_text),
+                pages=len(ocr_text),
+                method="tesseract-ocr",
+                confidence=0.85,
+            )
+    except Exception as e:
+        log.warning(f"OCR failed or tesseract not installed: {e}")
+        
     doc.close()
-
     return ExtractionResult(
-        text="\n\n".join(ocr_pages) if ocr_pages else "(No text could be extracted from this PDF.)",
-        pages=len(ocr_pages),
-        method="pymupdf-blocks",
-        confidence=0.75 if ocr_pages else 0.0,
+        text="(No text could be extracted. The PDF appears to be a scanned image and OCR is not available.)",
+        pages=doc.page_count,
+        method="error",
+        confidence=0.0,
     )
 
 
 def extract_text_from_image(image_bytes: bytes) -> ExtractionResult:
-    """Extract text from a lab report image. Placeholder for OCR integration."""
-    # In production: integrate Tesseract, EasyOCR, or doctr here
+    """Extract text from a lab report image via OCR."""
+    try:
+        import pytesseract
+        from PIL import Image
+        
+        img = Image.open(io.BytesIO(image_bytes))
+        text = pytesseract.image_to_string(img)
+        
+        if text.strip():
+            return ExtractionResult(
+                text=text.strip(),
+                pages=1,
+                method="tesseract-image",
+                confidence=0.85,
+            )
+    except Exception as e:
+        log.warning(f"Image OCR failed or tesseract not installed: {e}")
+        
     return ExtractionResult(
-        text="(Image OCR not yet implemented. Please upload a PDF for best results.)",
+        text="(Image OCR failed. Tesseract may not be installed on the server. Please upload a text-based PDF.)",
         pages=1,
-        method="placeholder",
+        method="error",
         confidence=0.0,
     )
 
