@@ -22,6 +22,7 @@ export const auth = {
     const body = new URLSearchParams(); body.set("username", email); body.set("password", password);
     return fetch(`${BASE}/auth/login`, { method: "POST", body, headers: { "Content-Type": "application/x-www-form-urlencoded" } }).then(async r => { if (!r.ok) throw new Error("Invalid credentials"); return r.json(); });
   },
+  resetPassword: (email, new_password) => _fetch("/auth/reset-password", { method: "POST", body: JSON.stringify({ email, new_password }) }),
   me: () => _fetch("/auth/me"),
 };
 

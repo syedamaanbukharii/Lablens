@@ -25,7 +25,7 @@ class Settings(BaseSettings):
     anthropic_api_key: str | None = None
     anthropic_model: str = "claude-haiku-4-5-20251001"
     groq_api_key: str | None = None
-    groq_model: str = "llama3-8b-8192"
+    groq_model: str = "llama-3.1-8b-instant"
     upload_dir: str = "./uploads"
     cors_origins: str = "*"
     access_token_expire_minutes: int = 1440  # 24h

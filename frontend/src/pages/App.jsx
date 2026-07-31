@@ -116,24 +116,35 @@ function TrendChart({ trend }) {
 // ═══════════════════════════════════════════════════
 
 function AuthPage({ onAuth }) {
-  const [isLogin, setIsLogin] = useState(true);
+  const [mode, setMode] = useState("login"); // "login" | "register" | "reset"
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
   const [error, setError] = useState("");
+  const [info, setInfo] = useState("");
   const [loading, setLoading] = useState(false);
 
   async function handleSubmit(e) {
-    e.preventDefault(); setError(""); setLoading(true);
+    e.preventDefault(); setError(""); setInfo(""); setLoading(true);
     try {
-      const data = isLogin
-        ? await auth.login(email, password)
-        : await auth.register(email, password, name);
-      setToken(data.access_token);
-      onAuth(data);
+      if (mode === "login") {
+        const data = await auth.login(email, password);
+        setToken(data.access_token);
+        onAuth(data);
+      } else if (mode === "register") {
+        const data = await auth.register(email, password, name);
+        setToken(data.access_token);
+        onAuth(data);
+      } else if (mode === "reset") {
+        const data = await auth.resetPassword(email, password);
+        setToken(data.access_token);
+        onAuth(data);
+      }
     } catch (err) { setError(err.message); }
     finally { setLoading(false); }
   }
+
+  const switchMode = (m) => { setMode(m); setError(""); setInfo(""); };
 
   return (
     <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: `linear-gradient(135deg, ${T.teal800}, ${T.teal600})`, padding: 20 }}>
@@ -144,17 +155,35 @@ function AuthPage({ onAuth }) {
           <p style={{ color: T.slate500, fontSize: 14, margin: "4px 0 0" }}>AI-powered lab report insights</p>
         </div>
         <form onSubmit={handleSubmit}>
-          {!isLogin && <input placeholder="Full name" value={name} onChange={e => setName(e.target.value)} style={{ ...input, marginBottom: 12 }} />}
+          {mode === "register" && <input placeholder="Full name" value={name} onChange={e => setName(e.target.value)} style={{ ...input, marginBottom: 12 }} />}
           <input placeholder="Email" type="email" value={email} onChange={e => setEmail(e.target.value)} required style={{ ...input, marginBottom: 12 }} />
-          <input placeholder="Password" type="password" value={password} onChange={e => setPassword(e.target.value)} required minLength={8} style={{ ...input, marginBottom: 16 }} />
+          <input placeholder={mode === "reset" ? "New password" : "Password"} type="password" value={password} onChange={e => setPassword(e.target.value)} required minLength={8} style={{ ...input, marginBottom: 16 }} />
           {error && <p style={{ color: T.red500, fontSize: 13, margin: "0 0 12px" }}>{error}</p>}
+          {info && <p style={{ color: T.green700, fontSize: 13, margin: "0 0 12px" }}>{info}</p>}
           <button type="submit" disabled={loading} style={btn(`linear-gradient(135deg, ${T.teal600}, ${T.green500})`)}>
-            {loading ? "..." : isLogin ? "Sign In" : "Create Account"}
+            {loading ? "..." : mode === "login" ? "Sign In" : mode === "register" ? "Create Account" : "Reset Password"}
           </button>
         </form>
-        <p style={{ textAlign: "center", fontSize: 13, color: T.slate500, marginTop: 16, cursor: "pointer" }} onClick={() => { setIsLogin(!isLogin); setError(""); }}>
-          {isLogin ? "Don't have an account? Sign up" : "Already have an account? Sign in"}
-        </p>
+        {mode === "login" && (
+          <>
+            <p style={{ textAlign: "center", fontSize: 13, color: T.teal600, marginTop: 12, cursor: "pointer" }} onClick={() => switchMode("reset")}>
+              Forgot password?
+            </p>
+            <p style={{ textAlign: "center", fontSize: 13, color: T.slate500, marginTop: 4, cursor: "pointer" }} onClick={() => switchMode("register")}>
+              Don't have an account? Sign up
+            </p>
+          </>
+        )}
+        {mode === "register" && (
+          <p style={{ textAlign: "center", fontSize: 13, color: T.slate500, marginTop: 16, cursor: "pointer" }} onClick={() => switchMode("login")}>
+            Already have an account? Sign in
+          </p>
+        )}
+        {mode === "reset" && (
+          <p style={{ textAlign: "center", fontSize: 13, color: T.slate500, marginTop: 16, cursor: "pointer" }} onClick={() => switchMode("login")}>
+            Back to Sign in
+          </p>
+        )}
       </div>
     </div>
   );

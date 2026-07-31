@@ -99,6 +99,24 @@ async def me(user: User = Depends(get_current_user)):
     return UserResponse(user_id=user.id, email=user.email, full_name=user.full_name)
 
 
+class ResetPasswordRequest(BaseModel):
+    email: str
+    new_password: str = Field(min_length=8)
+
+
+@app.post("/api/auth/reset-password")
+async def reset_password(req: ResetPasswordRequest, db: AsyncSession = Depends(get_db)):
+    """Reset password for an existing account (re-hashes with current bcrypt)."""
+    result = await db.execute(select(User).where(User.email == req.email))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(404, "No account found with that email.")
+    user.hashed_password = AuthService.hash_password(req.new_password)
+    await db.commit()
+    token = AuthService.create_token(user.id, user.email)
+    return TokenResponse(access_token=token, user_id=user.id, email=user.email, full_name=user.full_name)
+
+
 # ---------- Report routes ----------
 
 @app.post("/api/reports/upload")
