@@ -35,7 +35,11 @@ app.add_middleware(CORSMiddleware, allow_origins=settings.cors_list, allow_crede
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request, exc):
-    return JSONResponse(status_code=500, content={"message": str(exc), "traceback": traceback.format_exc()})
+    return JSONResponse(
+        status_code=500, 
+        content={"message": str(exc), "traceback": traceback.format_exc()},
+        headers={"Access-Control-Allow-Origin": "*"}
+    )
 
 
 # ---------- Schemas ----------

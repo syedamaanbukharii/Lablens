@@ -3,15 +3,24 @@ from __future__ import annotations
 from functools import lru_cache
 from typing import Literal
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+
+import os
+
+def get_database_url() -> str:
+    url = os.getenv("LABLENS_DATABASE_URL") or os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./lablens.db")
+    if url.startswith("postgres://"):
+        url = url.replace("postgres://", "postgresql+asyncpg://", 1)
+    return url
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="LABLENS_", env_file=".env", extra="ignore")
 
     env: Literal["development", "staging", "production"] = "development"
     secret_key: str = "dev-secret-change-in-production"
-    database_url: str = "sqlite+aiosqlite:///./lablens.db"
+    database_url: str = Field(default_factory=get_database_url)
     llm_provider: Literal["mock", "anthropic", "groq"] = "groq"
     anthropic_api_key: str | None = None
     anthropic_model: str = "claude-haiku-4-5-20251001"
