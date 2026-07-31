@@ -1,4 +1,5 @@
 import json
+import logging
 from typing import List, Optional
 
 from groq import Groq
@@ -6,54 +7,74 @@ from pydantic import BaseModel, Field
 
 from lablens.config import get_settings
 
+log = logging.getLogger(__name__)
+
 
 class LLMBiomarker(BaseModel):
-    name: str = Field(..., description="Canonical snake_case name of the biomarker, e.g. fasting_blood_glucose, ast_sgot, alt_sgpt")
-    display_name: str = Field(..., description="Human readable name, e.g. AST (SGOT)")
-    value: float = Field(..., description="The numeric value extracted")
-    unit: str = Field(..., description="The unit of measurement")
-    ref_low: Optional[float] = Field(None, description="The lower bound of the reference range if provided")
-    ref_high: Optional[float] = Field(None, description="The upper bound of the reference range if provided")
-    category: str = Field(..., description="One of: blood_sugar, lipid, liver, kidney, cbc, thyroid, vitamins, general")
+    name: str = Field(default="unknown")
+    display_name: str = Field(default="Unknown")
+    value: float = Field(default=0.0)
+    unit: str = Field(default="")
+    ref_low: Optional[float] = Field(default=None)
+    ref_high: Optional[float] = Field(default=None)
+    category: str = Field(default="general")
 
 
 class LLMExtraction(BaseModel):
-    is_valid_report: bool = Field(..., description="True if the text appears to be a medical lab report. False if it is a resume, generic document, or non-medical text.")
-    error_message: str = Field(..., description="If is_valid_report is false, explain that a valid medical lab report is required. Otherwise empty string.")
-    biomarkers: List[LLMBiomarker] = Field(default_factory=list, description="List of extracted biomarkers if valid report")
-    diet_suggestions: str = Field(..., description="General dietary suggestions (what to eat / avoid) based on any abnormal biomarkers. If everything is normal, provide general healthy diet advice.")
-    doctor_recommendation: str = Field(..., description="The type of medical specialist to consult based on the findings (e.g. Endocrinologist for diabetes/thyroid, Hepatologist for liver, General Practitioner if normal).")
+    is_valid_report: bool = Field(default=True)
+    error_message: str = Field(default="")
+    biomarkers: List[LLMBiomarker] = Field(default_factory=list)
+    diet_suggestions: str = Field(default="")
+    doctor_recommendation: str = Field(default="")
+
+
+SYSTEM_PROMPT = """You are a medical lab report analysis AI. You ONLY respond with valid JSON. No markdown, no explanation, just JSON.
+
+Your JSON response must have exactly these top-level keys:
+- "is_valid_report": boolean (true if the text is a medical lab report, false if it is a resume, letter, or non-medical document)
+- "error_message": string (explain why the document is invalid if is_valid_report is false, otherwise empty string "")
+- "biomarkers": array of objects, each with: "name" (snake_case), "display_name" (human readable), "value" (number), "unit" (string), "ref_low" (number or null), "ref_high" (number or null), "category" (one of: blood_sugar, lipid, liver, kidney, cbc, thyroid, vitamins, general)
+- "diet_suggestions": string with dietary advice based on abnormal results (what to eat, what to avoid)
+- "doctor_recommendation": string recommending which type of doctor to see based on results
+
+Example response for a valid report:
+{"is_valid_report": true, "error_message": "", "biomarkers": [{"name": "fasting_glucose", "display_name": "Fasting Glucose", "value": 145.0, "unit": "mg/dL", "ref_low": 70.0, "ref_high": 100.0, "category": "blood_sugar"}], "diet_suggestions": "Reduce sugar intake...", "doctor_recommendation": "Consult an Endocrinologist..."}
+
+Example response for an invalid document:
+{"is_valid_report": false, "error_message": "This document appears to be a resume, not a medical lab report. Please upload a valid lab report.", "biomarkers": [], "diet_suggestions": "", "doctor_recommendation": ""}"""
 
 
 def extract_from_llm(text: str) -> LLMExtraction:
     settings = get_settings()
     if not settings.groq_api_key:
         raise ValueError("Groq API key not configured")
-        
-    client = Groq(api_key=settings.groq_api_key)
-    
-    schema = LLMExtraction.model_json_schema()
-    
-    prompt = f"""You are an expert medical data extraction AI.
-    
-Analyze the following text. Determine if it is a medical lab report.
-If it is NOT a medical lab report (e.g. a resume, letter, invoice), set is_valid_report to false and provide an error_message.
-If it IS a medical lab report, extract all biomarkers, their values, units, and reference ranges.
-Also, provide general diet suggestions based on abnormal results, and recommend the type of doctor to consult.
-IMPORTANT: Your response MUST be valid JSON matching the following schema:
-{json.dumps(schema)}
 
-Text to analyze:
-{text[:6000]}
-"""
+    client = Groq(api_key=settings.groq_api_key)
+
+    user_prompt = f"Analyze this text and respond with JSON only:\n\n{text[:6000]}"
 
     response = client.chat.completions.create(
         model=settings.groq_model,
-        messages=[{"role": "user", "content": prompt}],
+        messages=[
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": user_prompt},
+        ],
         response_format={"type": "json_object"},
-        temperature=0.1
+        temperature=0.1,
     )
-    
+
     content = response.choices[0].message.content
+    log.info("LLM raw response: %s", content[:500])
+
     data = json.loads(content)
-    return LLMExtraction(**data)
+
+    # Defensive: if the LLM nests data under a wrapper key, unwrap it
+    if "is_valid_report" not in data:
+        # Try common wrapper patterns
+        for key in ("result", "response", "data", "report"):
+            if key in data and isinstance(data[key], dict):
+                data = data[key]
+                break
+
+    return LLMExtraction.model_validate(data)
+
