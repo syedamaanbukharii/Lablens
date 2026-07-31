@@ -312,5 +312,14 @@ async def dashboard(
 
 
 @app.get("/api/health")
-def health():
-    return {"status": "ok", "version": __version__}
+def health_check():
+    return {"status": "ok", "version": "1.0.0"}
+
+@app.get("/api/health/tesseract")
+def tesseract_check():
+    import subprocess
+    try:
+        result = subprocess.run(["tesseract", "--version"], capture_output=True, text=True, check=True)
+        return {"status": "ok", "version": result.stdout}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
