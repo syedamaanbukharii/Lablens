@@ -1,9 +1,9 @@
 import json
 import logging
-from typing import List, Optional
+from typing import List, Optional, Union
 
 from groq import Groq
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from lablens.config import get_settings
 
@@ -13,11 +13,27 @@ log = logging.getLogger(__name__)
 class LLMBiomarker(BaseModel):
     name: str = Field(default="unknown")
     display_name: str = Field(default="Unknown")
-    value: float = Field(default=0.0)
+    value: Optional[Union[float, str]] = Field(default=None)
     unit: str = Field(default="")
     ref_low: Optional[float] = Field(default=None)
     ref_high: Optional[float] = Field(default=None)
+    ref_text: str = Field(default="")  # For qualitative references like "Negative", "Pale Yellow"
     category: str = Field(default="general")
+    status: str = Field(default="normal")  # normal, abnormal, high, low, critical_high, critical_low
+
+    @field_validator("value", mode="before")
+    @classmethod
+    def coerce_value(cls, v):
+        if v is None:
+            return None
+        if isinstance(v, (int, float)):
+            return float(v)
+        if isinstance(v, str):
+            try:
+                return float(v)
+            except ValueError:
+                return v  # Keep as string for qualitative values like "Negative"
+        return v
 
 
 class LLMExtraction(BaseModel):
@@ -33,15 +49,26 @@ SYSTEM_PROMPT = """You are a medical lab report analysis AI. You ONLY respond wi
 Your JSON response must have exactly these top-level keys:
 - "is_valid_report": boolean (true if the text is a medical lab report, false if it is a resume, letter, or non-medical document)
 - "error_message": string (explain why the document is invalid if is_valid_report is false, otherwise empty string "")
-- "biomarkers": array of objects, each with: "name" (snake_case), "display_name" (human readable), "value" (number), "unit" (string), "ref_low" (number or null), "ref_high" (number or null), "category" (one of: blood_sugar, lipid, liver, kidney, cbc, thyroid, vitamins, general)
-- "diet_suggestions": string with dietary advice based on abnormal results (what to eat, what to avoid)
-- "doctor_recommendation": string recommending which type of doctor to see based on results
+- "biomarkers": array of objects for EVERY test result found in the report. Each object has:
+  - "name": snake_case identifier (e.g. "fasting_glucose", "urine_ph", "urine_protein")
+  - "display_name": human readable name (e.g. "Urine pH", "Protein")
+  - "value": the result value — use a NUMBER if the result is numeric (e.g. 145, 7.2, 1.015), or a STRING if the result is qualitative (e.g. "Negative", "Normal", "Light Yellow", "Positive", "1+", "Trace")
+  - "unit": the unit of measurement (e.g. "mg/dL", "" for qualitative)
+  - "ref_low": number or null (lower bound of reference range, null if qualitative)
+  - "ref_high": number or null (upper bound of reference range, null if qualitative)
+  - "ref_text": string with the expected/reference value for qualitative tests (e.g. "Negative", "Pale Yellow", "Normal"). Empty string for numeric tests.
+  - "category": one of: blood_sugar, lipid, liver, kidney, cbc, thyroid, vitamins, urine, general
+  - "status": one of: "normal" (value is within reference range or matches expected), "abnormal" (value is outside range or unexpected), "critical" (dangerously abnormal)
+- "diet_suggestions": string with dietary advice based on abnormal results
+- "doctor_recommendation": string recommending which type of doctor to see
 
-Example response for a valid report:
-{"is_valid_report": true, "error_message": "", "biomarkers": [{"name": "fasting_glucose", "display_name": "Fasting Glucose", "value": 145.0, "unit": "mg/dL", "ref_low": 70.0, "ref_high": 100.0, "category": "blood_sugar"}], "diet_suggestions": "Reduce sugar intake...", "doctor_recommendation": "Consult an Endocrinologist..."}
+IMPORTANT: Extract ALL tests from the report, including qualitative tests like urine analysis (color, pH, protein, glucose, ketones, blood, etc.), not just numeric blood tests.
+
+Example with both numeric and qualitative results:
+{"is_valid_report": true, "error_message": "", "biomarkers": [{"name": "fasting_glucose", "display_name": "Fasting Glucose", "value": 145.0, "unit": "mg/dL", "ref_low": 70.0, "ref_high": 100.0, "ref_text": "", "category": "blood_sugar", "status": "abnormal"}, {"name": "urine_protein", "display_name": "Protein", "value": "Negative", "unit": "", "ref_low": null, "ref_high": null, "ref_text": "Negative", "category": "urine", "status": "normal"}, {"name": "urine_color", "display_name": "Colour", "value": "Light Yellow", "unit": "", "ref_low": null, "ref_high": null, "ref_text": "Pale Yellow", "category": "urine", "status": "normal"}], "diet_suggestions": "Reduce sugar intake...", "doctor_recommendation": "Consult an Endocrinologist..."}
 
 Example response for an invalid document:
-{"is_valid_report": false, "error_message": "This document appears to be a resume, not a medical lab report. Please upload a valid lab report.", "biomarkers": [], "diet_suggestions": "", "doctor_recommendation": ""}"""
+{"is_valid_report": false, "error_message": "This document appears to be a resume, not a medical lab report.", "biomarkers": [], "diet_suggestions": "", "doctor_recommendation": ""}"""
 
 
 def extract_from_llm(text: str) -> LLMExtraction:
@@ -70,11 +97,11 @@ def extract_from_llm(text: str) -> LLMExtraction:
 
     # Defensive: if the LLM nests data under a wrapper key, unwrap it
     if "is_valid_report" not in data:
-        # Try common wrapper patterns
         for key in ("result", "response", "data", "report"):
             if key in data and isinstance(data[key], dict):
                 data = data[key]
                 break
 
     return LLMExtraction.model_validate(data)
+
 

@@ -203,9 +203,10 @@ async def get_report(
         if cat not in categories:
             categories[cat] = []
         emoji = "✅" if m.status == "normal" else ("⚠️" if m.status in ("high", "low") else "🔴")
+        val_to_show = m.value if m.value is not None else getattr(m, 'text_value', "")
         categories[cat].append({
             "name": m.display_name,
-            "value": m.value,
+            "value": val_to_show,
             "unit": m.unit,
             "status": m.status,
             "emoji": emoji,
@@ -227,10 +228,11 @@ async def get_report(
             {
                 "name": m.name,
                 "display_name": m.display_name,
-                "value": m.value,
+                "value": m.value if m.value is not None else getattr(m, 'text_value', ""),
                 "unit": m.unit,
                 "ref_low": m.ref_low,
                 "ref_high": m.ref_high,
+                "ref_text": getattr(m, 'ref_text', ""),
                 "status": m.status,
                 "category": m.category,
                 "interpretation": m.interpretation,

@@ -70,6 +70,11 @@ function MarkerCard({ m }) {
           </div>
         </div>
       )}
+      {m.ref_low == null && m.ref_text && (
+        <div style={{ marginBottom: 8, fontSize: 12, color: T.slate500, fontStyle: "italic" }}>
+          Expected: {m.ref_text}
+        </div>
+      )}
       <p style={{ fontSize: 13, color: T.slate700, lineHeight: 1.6, margin: 0 }}>{m.interpretation}</p>
     </div>
   );

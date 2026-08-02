@@ -82,9 +82,11 @@ class Biomarker(Base):
     name = Column(String(100), nullable=False, index=True)
     display_name = Column(String(150), default="")
     value = Column(Float, nullable=True)
+    text_value = Column(String(255), default="")
     unit = Column(String(30), default="")
     ref_low = Column(Float, nullable=True)
     ref_high = Column(Float, nullable=True)
+    ref_text = Column(String(255), default="")
     status = Column(String(20), default="normal")  # normal | low | high | critical_low | critical_high
     category = Column(String(50), default="general")  # blood_sugar, lipid, liver, kidney, cbc, thyroid, etc.
     interpretation = Column(Text, default="")
@@ -117,6 +119,20 @@ async def init_db():
     engine = get_engine()
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        
+        # Lightweight migration to add columns to existing tables
+        from sqlalchemy import text
+        try:
+            # PostgreSQL syntax
+            await conn.execute(text("ALTER TABLE biomarkers ADD COLUMN IF NOT EXISTS text_value VARCHAR(255) DEFAULT ''"))
+            await conn.execute(text("ALTER TABLE biomarkers ADD COLUMN IF NOT EXISTS ref_text VARCHAR(255) DEFAULT ''"))
+        except Exception:
+            try:
+                # SQLite fallback (will fail if columns already exist, which is fine)
+                await conn.execute(text("ALTER TABLE biomarkers ADD COLUMN text_value VARCHAR(255) DEFAULT ''"))
+                await conn.execute(text("ALTER TABLE biomarkers ADD COLUMN ref_text VARCHAR(255) DEFAULT ''"))
+            except Exception:
+                pass
 
 
 async def get_db() -> AsyncSession:

@@ -95,28 +95,37 @@ async def process_lab_report(
             "doctor_recommendation": ""
         }
 
-    # Convert LLMBiomarker to ParsedBiomarker for compatibility with interpreter
+    # Separate numeric and qualitative biomarkers
+    numeric_biomarkers = []
+    qualitative_biomarkers = []
+    for bm in llm_data.biomarkers:
+        if isinstance(bm.value, (int, float)):
+            numeric_biomarkers.append(bm)
+        else:
+            qualitative_biomarkers.append(bm)
+
+    # Convert numeric LLMBiomarker to ParsedBiomarker for rules-based interpreter
     parsed = [
         ParsedBiomarker(
             name=bm.name,
             display_name=bm.display_name,
-            value=bm.value,
+            value=float(bm.value),
             unit=bm.unit,
             ref_low=bm.ref_low,
             ref_high=bm.ref_high,
             category=bm.category
         )
-        for bm in llm_data.biomarkers
+        for bm in numeric_biomarkers
     ]
 
     # Save extra LLM fields
     report.diet_suggestions = llm_data.diet_suggestions
     report.doctor_recommendation = llm_data.doctor_recommendation
 
-    # Step 4: Interpret (rules-based plain-language)
+    # Step 4: Interpret numeric markers (rules-based plain-language)
     summary = summarize_report(parsed)
 
-    # Step 5: Persist biomarkers
+    # Step 5: Persist numeric biomarkers
     for bm in parsed:
         status = classify_status(bm.value, bm.ref_low, bm.ref_high)
         marker = Biomarker(
@@ -137,42 +146,131 @@ async def process_lab_report(
         )
         db.add(marker)
 
+    # Step 5b: Persist qualitative biomarkers (use LLM's own status)
+    qual_insights = []
+    for bm in qualitative_biomarkers:
+        # Map LLM status to our status format
+        llm_status = (bm.status or "normal").lower()
+        if llm_status in ("abnormal", "critical"):
+            status = "high" if llm_status == "abnormal" else "critical_high"
+        elif llm_status in ("normal", "high", "low", "critical_high", "critical_low"):
+            status = llm_status
+        else:
+            status = "normal"
+
+        text_val = str(bm.value) if bm.value else ""
+        ref_text = bm.ref_text if hasattr(bm, 'ref_text') else ""
+
+        # Qualitative interpretation
+        if status == "normal":
+            interp = f"{bm.display_name} is {text_val}, which is within normal/expected range."
+        else:
+            interp = f"{bm.display_name} is {text_val} (expected: {ref_text or 'normal'}). This is outside the expected range — please discuss with your doctor."
+
+        marker = Biomarker(
+            report_id=report.id,
+            user_id=user_id,
+            name=bm.name,
+            display_name=bm.display_name,
+            value=None,  # Qualitative: no numeric value
+            text_value=text_val,
+            unit=bm.unit,
+            ref_low=None,
+            ref_high=None,
+            ref_text=ref_text,
+            status=status,
+            category=bm.category,
+            interpretation=interp,
+            report_date=report.report_date,
+        )
+        db.add(marker)
+
+        emoji = "✅" if status == "normal" else ("⚠️" if status in ("high", "low") else "🔴")
+        qual_insights.append({
+            "name": bm.name,
+            "display_name": bm.display_name,
+            "value": text_val,
+            "unit": bm.unit,
+            "ref_low": None,
+            "ref_high": None,
+            "ref_text": ref_text,
+            "status": status,
+            "category": bm.category,
+            "interpretation": interp,
+            "emoji": emoji,
+        })
+    # Build combined summary that includes qualitative markers
+    qual_normal = sum(1 for q in qual_insights if q["status"] == "normal")
+    qual_abnormal = sum(1 for q in qual_insights if q["status"] in ("high", "low"))
+    qual_critical = sum(1 for q in qual_insights if q["status"] in ("critical_high", "critical_low"))
+
+    total_normal = summary.normal_count + qual_normal
+    total_abnormal = summary.abnormal_count + qual_abnormal
+    total_critical = summary.critical_count + qual_critical
+    total_markers = summary.total_markers + len(qual_insights)
+
+    # If all results are qualitative, build a custom summary
+    if not parsed and qual_insights:
+        parts = []
+        if qual_critical:
+            names = ", ".join(q["display_name"] for q in qual_insights if q["status"] in ("critical_high", "critical_low"))
+            parts.append(f"🔴 Attention needed: {names} — significantly outside expected range.")
+        if qual_abnormal:
+            names = ", ".join(q["display_name"] for q in qual_insights if q["status"] in ("high", "low"))
+            parts.append(f"⚠️ {names} — outside the expected range. See details below.")
+        if qual_normal and not qual_critical and not qual_abnormal:
+            parts.append("✅ All your test results are within normal/expected ranges. Keep up the good work!")
+        elif qual_normal:
+            parts.append(f"✅ {qual_normal} other test{'s' if qual_normal > 1 else ''} {'are' if qual_normal > 1 else 'is'} within normal ranges.")
+        plain_summary = "\n\n".join(parts)
+    else:
+        plain_summary = summary.plain_summary
+
     report.status = "processed"
-    report.summary = summary.plain_summary
+    report.summary = plain_summary
     await db.commit()
 
-    # Step 6: Compute trends from historical data
+    # Step 6: Compute trends from historical data (numeric only)
     trends = await _compute_user_trends(db, user_id, parsed)
+
+    # Merge numeric and qualitative markers for the response
+    all_markers = [
+        {
+            "name": i.name,
+            "display_name": i.display_name,
+            "value": i.value,
+            "unit": i.unit,
+            "ref_low": i.ref_low,
+            "ref_high": i.ref_high,
+            "status": i.status,
+            "category": i.category,
+            "interpretation": i.interpretation,
+            "emoji": i.emoji,
+        }
+        for i in summary.insights
+    ] + qual_insights
+
+    # Build combined categories
+    all_categories = {}
+    for cat, items in summary.categories.items():
+        all_categories[cat] = [{"name": i.display_name, "value": i.value, "unit": i.unit, "status": i.status, "emoji": i.emoji} for i in items]
+    for q in qual_insights:
+        cat = q["category"]
+        if cat not in all_categories:
+            all_categories[cat] = []
+        all_categories[cat].append({"name": q["display_name"], "value": q["value"], "unit": q["unit"], "status": q["status"], "emoji": q["emoji"]})
 
     return {
         "report_id": report.id,
         "status": "processed",
         "extraction_method": extraction.method,
-        "summary": summary.plain_summary,
-        "total_markers": summary.total_markers,
-        "normal_count": summary.normal_count,
-        "abnormal_count": summary.abnormal_count,
-        "critical_count": summary.critical_count,
-        "markers": [
-            {
-                "name": i.name,
-                "display_name": i.display_name,
-                "value": i.value,
-                "unit": i.unit,
-                "ref_low": i.ref_low,
-                "ref_high": i.ref_high,
-                "status": i.status,
-                "category": i.category,
-                "interpretation": i.interpretation,
-                "emoji": i.emoji,
-            }
-            for i in summary.insights
-        ],
-        "categories": {
-            cat: [{"name": i.display_name, "value": i.value, "unit": i.unit, "status": i.status, "emoji": i.emoji}
-                  for i in items]
-            for cat, items in summary.categories.items()
-        },
+        "summary": plain_summary,
+        "total_markers": total_markers,
+        "normal_count": total_normal,
+        "abnormal_count": total_abnormal,
+        "critical_count": total_critical,
+        "markers": all_markers,
+        "categories": all_categories,
         "trends": trends,
         "diet_suggestions": report.diet_suggestions,
         "doctor_recommendation": report.doctor_recommendation,
