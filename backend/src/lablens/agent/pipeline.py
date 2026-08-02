@@ -75,6 +75,26 @@ async def process_lab_report(
             "doctor_recommendation": ""
         }
 
+    # Guard: if extraction failed (scanned PDF without OCR) or LLM found 0 biomarkers
+    if not llm_data.biomarkers or extraction.confidence == 0.0:
+        report.status = "invalid_report"
+        if extraction.confidence == 0.0:
+            report.summary = "No text could be extracted from the PDF. Please upload a valid text-based medical lab report."
+        else:
+            report.summary = "The document was analyzed but no biomarkers could be identified. Please ensure you're uploading a medical lab report with test results."
+        await db.commit()
+        return {
+            "report_id": report.id,
+            "status": "invalid_report",
+            "extraction_method": extraction.method,
+            "raw_text_preview": extraction.text[:500],
+            "summary": report.summary,
+            "markers": [],
+            "trends": [],
+            "diet_suggestions": "",
+            "doctor_recommendation": ""
+        }
+
     # Convert LLMBiomarker to ParsedBiomarker for compatibility with interpreter
     parsed = [
         ParsedBiomarker(
