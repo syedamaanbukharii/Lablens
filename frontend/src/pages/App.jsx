@@ -209,6 +209,12 @@ function MainApp({ user, onLogout }) {
     setUploading(true); setError(""); setResult(null);
     try {
       const data = await reports.upload(file);
+      // Ensure counts are always present (safety net for older backend responses)
+      const markers = data.markers || [];
+      if (data.normal_count == null) data.normal_count = markers.filter(m => m.status === "normal").length;
+      if (data.abnormal_count == null) data.abnormal_count = markers.filter(m => m.status === "high" || m.status === "low").length;
+      if (data.critical_count == null) data.critical_count = markers.filter(m => m.status === "critical_high" || m.status === "critical_low").length;
+      if (data.total_markers == null) data.total_markers = markers.length;
       setResult(data);
       setPage("result");
       loadDash(); loadReports(); loadTrends();
@@ -329,7 +335,7 @@ function MainApp({ user, onLogout }) {
             <h2 style={{ fontSize: 18, fontWeight: 700, color: T.slate800, margin: "0 0 16px" }}>📁 Report history</h2>
             {reportList.length === 0 && <p style={{ color: T.slate400, textAlign: "center", padding: 40 }}>No reports yet. Upload your first lab report!</p>}
             {reportList.map(r => (
-              <div key={r.report_id} style={{ ...card, cursor: "pointer" }} onClick={async () => { const d = await reports.get(r.report_id); setResult({ ...d, categories: {} }); setPage("result"); }}>
+              <div key={r.report_id} style={{ ...card, cursor: "pointer" }} onClick={async () => { const d = await reports.get(r.report_id); setResult(d); setPage("result"); }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                   <div>
                     <p style={{ fontSize: 14, fontWeight: 600, margin: 0, color: T.slate800 }}>{r.filename}</p>

@@ -189,6 +189,28 @@ async def get_report(
         select(Biomarker).where(Biomarker.report_id == report_id).order_by(Biomarker.category)
     )
 
+    marker_list = markers.scalars().all()
+
+    # Compute counts from persisted markers
+    normal_count = sum(1 for m in marker_list if m.status == "normal")
+    abnormal_count = sum(1 for m in marker_list if m.status in ("high", "low"))
+    critical_count = sum(1 for m in marker_list if m.status in ("critical_high", "critical_low"))
+
+    # Group by category
+    categories = {}
+    for m in marker_list:
+        cat = m.category or "general"
+        if cat not in categories:
+            categories[cat] = []
+        emoji = "✅" if m.status == "normal" else ("⚠️" if m.status in ("high", "low") else "🔴")
+        categories[cat].append({
+            "name": m.display_name,
+            "value": m.value,
+            "unit": m.unit,
+            "status": m.status,
+            "emoji": emoji,
+        })
+
     return {
         "report_id": report.id,
         "filename": report.filename,
@@ -197,6 +219,10 @@ async def get_report(
         "summary": report.summary,
         "diet_suggestions": report.diet_suggestions,
         "doctor_recommendation": report.doctor_recommendation,
+        "total_markers": len(marker_list),
+        "normal_count": normal_count,
+        "abnormal_count": abnormal_count,
+        "critical_count": critical_count,
         "markers": [
             {
                 "name": m.name,
@@ -208,9 +234,11 @@ async def get_report(
                 "status": m.status,
                 "category": m.category,
                 "interpretation": m.interpretation,
+                "emoji": "✅" if m.status == "normal" else ("⚠️" if m.status in ("high", "low") else "🔴"),
             }
-            for m in markers.scalars().all()
+            for m in marker_list
         ],
+        "categories": categories,
     }
 
 
